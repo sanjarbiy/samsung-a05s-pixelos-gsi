@@ -1,0 +1,20 @@
+# never commit firmware, images, or build artifacts (copyright + huge)
+work/
+.tools/
+*.img
+*.img.lz4
+*.raw
+*.tar
+*.tar.md5
+*.zip
+*.xz
+*.bin
+*.pit
+# personal / secrets — never commit
+*token*
+*session.json
+*.keystore
+*.pem
+id_*
+*serial*
+*imei*
