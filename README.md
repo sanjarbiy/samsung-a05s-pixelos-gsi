@@ -1,119 +1,315 @@
-# Samsung Galaxy A05s (SM-A057F) → PixelOS (Android 14 GSI) + Root
+# Samsung Galaxy A05s (SM‑A057F) → PixelOS (Android 14 GSI) + Root
 
-Install a clean **Google/Pixel-style Android (GSI)** on the Samsung Galaxy A05s, fully replacing One UI — then optionally root with Magisk.
+Replace Samsung One UI with a clean **Google/Pixel‑style Android (a GSI)** on the Galaxy A05s, then optionally **root** with Magisk.
 
-The A05s has **no working TWRP and no fastboot**, so the usual "fastboot flash system" GSI method does **not** work. The only way is to **repack the stock `super` partition** (swap `system` for the GSI, keep the Samsung vendor/product drivers) and flash it with **Odin**. This repo documents that, with the non-obvious gotchas solved, plus scripts that automate the repack.
+The A05s has **no working TWRP and no fastboot**, so the usual "`fastboot flash system`" GSI method is impossible. The only working route is to **repack the stock `super` partition** (put the GSI in as `system`, keep Samsung's drivers) and flash it with **Odin**. This guide documents that end‑to‑end, with the non‑obvious traps solved, plus scripts that automate the hard part.
 
-> Verified working: **PixelOS `treble_arm64_bN-14.0` GSI** boots on **SM-A057F** (build `A057FXXSDDZB3`, Android 15 stock base), hardware (Wi‑Fi / calls / camera) functional via the kept Samsung vendor.
+> ✅ **Verified:** PixelOS `treble_arm64_bN-14.0` boots on **SM‑A057F** (stock build `A057FXXSDDZB3`). Wi‑Fi, mobile data/calls, and camera work (they use the kept Samsung vendor). Magisk root works.
 
----
-
-## ⚠️ Read this first
-
-- **This wipes all data** and **trips Knox** (`warranty_bit 0 → 1`, permanent — Samsung Pay / Secure Folder / some banking features die, warranty void).
-- **Back up first.**
-- **You can't hard-brick** this way (we never touch the bootloader/modem) — worst case is a bootloop, recoverable by re‑flashing stock firmware in Odin. But **do this at your own risk.** Not responsible for your device.
-- Works on the **international SM‑A057F** (Exynos/Qualcomm intl) where **OEM unlocking** exists. **US Snapdragon carrier models have no OEM unlock → not possible.**
+If you follow every step **in order**, you will succeed. Don't skip steps. Read the ⚠️ boxes.
 
 ---
 
-## How it works (the transplant)
-
-A GSI is **only the `system`** (the OS/UI + Google apps). It has **no device drivers**. On the A05s, `system` + `vendor` + `product` + `odm` etc. all live inside **one `super` partition** (dynamic/logical partitions).
-
-So we:
-1. Take the stock `super` from the firmware,
-2. **`lpunpack`** it into its partitions,
-3. Replace **only `system`** with the PixelOS GSI (keep `vendor`/`product`/`odm`/`system_ext`/`*_dlkm` → drivers keep working),
-4. **`lpmake`** a new `super`,
-5. Disable AVB (`vbmeta`) so the bootloader accepts the modified `super`,
-6. **Odin-flash** the new `super` + disabled `vbmeta`,
-7. Factory reset (so the new OS can format `/data`).
-
----
-
-## Prerequisites
-
-- The phone, **bootloader unlocked** (see step 1). Battery > 50%.
-- **A Linux box** (or WSL/VM) for the repack — needs: `clang`, `lz4`, `simg2img`/`img2simg` (`android-sdk-libsparse-utils`), `e2fsprogs`, `git`, `python3`, ~40 GB free scratch.
-- **Windows + [Odin3](https://odindownload.com/)** (v3.13.x+) + Samsung USB driver — for flashing.
-- **[Frija](https://github.com/SlackingVeteran/frija)** (Windows) to download the exact stock firmware.
-- The GSI: **[PixelOS GSI by MisterZtr](https://sourceforge.net/projects/misterztr-gsi/files/PixelOS/)** — use `arm64_bN` (the **`b`** = System‑as‑Root, correct for A05s), **non‑vndklite** (vndklite bootloops). Or any phh/TrebleDroid `arm64 b` GSI.
-
-> **Do not** download firmware or the GSI from this repo — get them from the official sources above (copyright + size).
+## Table of contents
+1. [What you'll end up with](#1-what-youll-end-up-with)
+2. [⚠️ Warnings — read before anything](#2-️-warnings--read-before-anything)
+3. [Will this work on MY phone?](#3-will-this-work-on-my-phone)
+4. [How it works (plain English)](#4-how-it-works-plain-english)
+5. [Glossary (if you're new)](#5-glossary-if-youre-new)
+6. [What you need (hardware, software, files)](#6-what-you-need)
+7. [Part 1 — Unlock the bootloader](#part-1--unlock-the-bootloader)
+8. [Part 2 — Download the stock firmware (Frija)](#part-2--download-the-stock-firmware-frija)
+9. [Part 3 — Set up the Linux repack machine](#part-3--set-up-the-linux-repack-machine)
+10. [Part 4 — Repack `super` (swap in the GSI)](#part-4--repack-super-swap-in-the-gsi)
+11. [Part 5 — Build the Odin flash file](#part-5--build-the-odin-flash-file)
+12. [Part 6 — Flash with Odin](#part-6--flash-with-odin)
+13. [Part 7 — First boot + the mandatory factory reset](#part-7--first-boot--the-mandatory-factory-reset)
+14. [Part 8 — Root with Magisk (optional)](#part-8--root-with-magisk-optional)
+15. [Verify success](#verify-success)
+16. [Troubleshooting (every error we hit)](#troubleshooting)
+17. [Un‑brick / go back to stock Samsung](#un-brick--go-back-to-stock-samsung)
+18. [FAQ](#faq) · [Credits](#credits) · [License](#license)
 
 ---
 
-## Steps
+## 1. What you'll end up with
+- **Stock Google Android 14 (PixelOS)** — Pixel launcher, Google apps, no One UI / Bixby / Samsung apps.
+- Working hardware (Wi‑Fi, calls, data, Bluetooth, GPS, camera) via the kept Samsung drivers.
+- Optional **Magisk root**.
 
-### 1. Unlock the bootloader
-1. Add a Google + Samsung account, connect to internet once (so OEM unlock un-greys), wait if needed.
-2. Settings → About phone → Software info → tap **Build number** 7× → **Developer options** → enable **OEM unlocking** + **USB debugging**.
-3. Power off. Hold **Vol Up + Vol Down**, **plug in USB** (to a PC) → unlock prompt → **long‑press Vol Up** → **Vol Up** to confirm → it wipes + unlocks.
-4. Finish setup, re-enable Developer options + USB debugging.
-   Verify: `adb shell getprop ro.boot.flash.locked` → `0`, `ro.boot.verifiedbootstate` → `orange`.
+| Stock recovery you'll see (expected, step 7) |
+|---|
+| ![recovery](docs/recovery-after-flash.jpg) |
 
-### 2. Download stock firmware (Frija, Windows)
-- Frija → **Manual** → Model `SM-A057F`, your **CSC/region**, your **IMEI** (or serial) → Check Update → Download.
-- You get a zip with `BL_…`, `AP_…`, `CP_…`, `CSC_…`, `HOME_CSC_…` (`.tar.md5`). Copy the **AP** + **CSC** to your Linux box.
+---
 
-### 3. Build the repack tools (Linux)
-```bash
-sudo apt-get install -y clang lz4 android-sdk-libsparse-utils e2fsprogs git
-scripts/01-build-tools.sh      # builds lpunpack + lpmake (+ lpdump)
+## 2. ⚠️ Warnings — read before anything
+- **All data is erased.** Back up first.
+- **Knox is permanently tripped** (`warranty_bit 0 → 1`). Samsung Pay, Secure Folder, some banking features and the warranty are gone **forever** (e‑fuse, not reversible).
+- Banking apps may refuse to run (Play Integrity fails on a custom ROM) — see [FAQ](#faq).
+- **You cannot hard‑brick** with this method — we never flash the bootloader or modem, so **Download mode always survives** and you can re‑flash stock (see [Un‑brick](#un-brick--go-back-to-stock-samsung)). Worst case is a bootloop. **But you do everything at your own risk. Nobody is responsible for your device but you.**
+
+---
+
+## 3. Will this work on MY phone?
+- **Model must be `SM‑A057F`** (international). Check: Settings → About phone → Model number.
+- Other A05s variants (`SM‑A057M`, `SM‑A057G`) likely work too (same `a05s` platform) — but use **their own** firmware.
+- **US Snapdragon / carrier models: NO.** Those have **no OEM‑unlock toggle** → you can't unlock → stop here.
+- Quick test: if Developer options has an **"OEM unlocking"** switch that you can turn on, you're good.
+
+---
+
+## 4. How it works (plain English)
+A "GSI" is **only the operating system** (`system` partition: the UI + Google apps). It contains **no drivers** for your specific phone. On the A05s, the OS **and** the drivers (`vendor`, `product`, `odm`, …) all live together inside **one big partition called `super`** (these are "dynamic / logical partitions").
+
+There's no tool on the A05s to flash just `system`. So we do a **transplant**:
+
+```
+stock super.img                          new super.img (what we build)
+┌───────────────────────┐                ┌───────────────────────┐
+│ system   (Samsung OS) │  ──remove──►   │ system   (PixelOS GSI)│ ◄─ swapped
+│ vendor   (drivers)    │  ──keep────►   │ vendor   (drivers)    │
+│ product  (Samsung)    │  ──keep────►   │ product  (Samsung)    │
+│ odm / *_dlkm / …      │  ──keep────►   │ odm / *_dlkm / …      │
+└───────────────────────┘                └───────────────────────┘
+        then: disable AVB (vbmeta) ──► flash new super + vbmeta with Odin ──► wipe data
 ```
 
-### 4. Repack `super` with the GSI (Linux)
-```bash
-scripts/02-repack.sh  AP_A057F….tar.md5  PixelOS_treble_arm64_bN-14.0-….img.xz  ./work
-```
-It extracts the stock `super`, reads the exact layout with `lpdump`, swaps `system` → GSI, and `lpmake`s a new `super.img`. **It auto-derives** device‑size / group / metadata‑slots from the stock super — no hardcoding.
-
-### 5. Build the Odin tar (Linux)
-```bash
-scripts/03-pack-odin.sh  ./work  AP_A057F….tar.md5
-```
-Produces **`work/AP_PE.tar`** = `super.img.lz4` (the GSI super) + `vbmeta.img.lz4` (AVB disabled), in **Samsung's exact lz4 format** (`--content-size`, see Gotchas).
-
-### 6. Flash (Odin, Windows)
-- Phone in **Download mode** (`adb reboot download`, or Vol Up+Down + USB). Odin **ID:COM** turns blue.
-- **AP** = `AP_PE.tar`
-- **CSC** = the stock **`CSC_…tar.md5`** (the **CSC**, *not* HOME_CSC → wipes data — required)
-- **BL / CP** = leave empty
-- Options: defaults. **Start** → wait for **PASS** (AP is ~4.5 GB, takes minutes — don't unplug).
-
-### 7. Factory reset (mandatory)
-First boot lands in Samsung recovery: *"Can't load Android system… `init_user0_failed`"* — that's **expected** (old encrypted `/data`). In recovery: **Factory data reset** → confirm → **Reboot system now**. First PixelOS boot is slow (~5–10 min). 🎉
-
-### 8. (Optional) Root with Magisk
-```bash
-# extract stock init_boot from the AP, patch with Magisk app on the phone, then:
-scripts/04-pack-initboot.sh  ./work  magisk_patched-XXXXX.img   # -> work/AP_root.tar
-```
-- Install **[Magisk](https://github.com/topjohnwu/Magisk/releases)** APK → Install → **Select and Patch a File** → `init_boot.img` → produces `magisk_patched-*.img`.
-- Pack it (script above), Odin **AP** = `AP_root.tar`, **all other slots empty** (no wipe), Start → reboot → rooted.
+We keep Samsung's drivers so hardware keeps working; we only replace the OS.
 
 ---
 
-## Gotchas / Troubleshooting (the stuff nobody documents)
+## 5. Glossary (if you're new)
+- **GSI** – Generic System Image: one Android system image meant to run on any "Treble" device.
+- **super** – the single physical partition that holds the logical partitions (system, vendor, …).
+- **lpunpack / lpmake** – tools to unpack / rebuild a `super` image.
+- **lpdump** – prints a `super` image's layout (sizes, groups, partitions).
+- **vbmeta / AVB** – "Android Verified Boot". It cryptographically checks system/vendor. We **disable** it so the phone accepts our modified `super`.
+- **Odin** – Samsung's Windows flashing tool. Slots: **BL** (bootloader), **AP** (system/super/etc.), **CP** (modem), **CSC** (carrier + data wipe), **HOME_CSC** (carrier, keeps data).
+- **Download mode** – Samsung's flash mode that Odin talks to.
+- **`.tar.md5`** – a plain tar with an MD5 appended; what Odin flashes.
+- **`.lz4`** – Samsung compresses each image inside the tar with LZ4.
+
+---
+
+## 6. What you need
+
+**Hardware**
+- The Galaxy A05s (battery > 50%).
+- A USB cable + a **Windows PC** (for Odin).
+- A **Linux machine** (native, VM, or WSL2) for the repack — needs **~40 GB free disk**.
+
+**Software**
+- **Windows:** [Odin3 v3.13.x or newer](https://odindownload.com/) + Samsung USB driver, and [Frija](https://github.com/SlackingVeteran/frija) (firmware downloader).
+- **Linux:** `clang lz4 android-sdk-libsparse-utils e2fsprogs git python3` (install command in Part 3).
+
+**Files** (download yourself — not in this repo, for copyright/size reasons)
+- **Stock firmware** for your exact model (Part 2).
+- **The GSI:** [PixelOS GSI by MisterZtr](https://sourceforge.net/projects/misterztr-gsi/files/PixelOS/Android%2014/) → pick `PixelOS_treble_arm64_bN-14.0-*.img.xz`.
+  - **`arm64` `_bN`** is mandatory: **`b`** = System‑as‑Root (the A05s needs this; `a` is legacy and won't boot). **Not** the `vndklite` build (it bootloops).
+  - Any phh/TrebleDroid **`arm64 b`** GSI works the same way.
+
+**Get this repo**
+```bash
+git clone https://github.com/sanjarbiy/samsung-a05s-pixelos-gsi
+cd samsung-a05s-pixelos-gsi
+```
+
+---
+
+## Part 1 — Unlock the bootloader
+> Erases the phone. This is unavoidable.
+
+1. Insert a SIM, connect Wi‑Fi, sign into a **Google account** + **Samsung account** once (lets the OEM‑unlock toggle appear, sometimes after a wait / a few reboots).
+2. Settings → **About phone → Software information** → tap **Build number 7×** (enables Developer options).
+3. Settings → **Developer options** → turn **ON**: **OEM unlocking** and **USB debugging**.
+4. Power **off**. Hold **Volume Up + Volume Down together**, then **plug the USB cable into the PC** (keep holding) → a blue **unlock warning** appears.
+5. **Long‑press Volume Up** → screen changes → press **Volume Up** to confirm **Unlock bootloader** → it wipes and reboots.
+6. Finish setup, then **re‑enable Developer options → USB debugging** (and OEM unlocking stays on).
+
+**Checkpoint** (on the PC, phone in OS with USB debugging, `adb` installed):
+```bash
+adb shell getprop ro.boot.flash.locked        # expect: 0
+adb shell getprop ro.boot.verifiedbootstate    # expect: orange
+```
+If `flash.locked` is `0` and state is `orange`, the bootloader is unlocked. ✅
+
+---
+
+## Part 2 — Download the stock firmware (Frija)
+You need the stock `super` (for the drivers) and the stock `vbmeta` (to disable). Frija downloads the exact official firmware.
+
+1. On Windows, run **Frija** → **Manual** tab.
+2. Enter **Model** = your model (e.g. `SM-A057F`), **CSC** = your region code, **IMEI/Serial** = your phone's (dial `*#06#` for IMEI).
+3. **Check Update** → **Download**. You get a zip containing 4–5 `.tar.md5` files:
+   - `BL_…` (bootloader), `AP_…` (the big one, ~7 GB, contains `super.img.lz4`), `CP_…` (modem), `CSC_…` and `HOME_CSC_…`.
+4. Copy the **`AP_…tar.md5`** and the **`CSC_…tar.md5`** to your Linux machine.
+
+> ⚠️ Get firmware matching the build **already on your phone** (or newer). Check yours: `adb shell getprop ro.bootloader` (e.g. `A057FXXSDDZB3`).
+
+---
+
+## Part 3 — Set up the Linux repack machine
+```bash
+# 1. dependencies
+sudo apt-get update
+sudo apt-get install -y clang lz4 android-sdk-libsparse-utils e2fsprogs git python3
+
+# 2. build lpunpack / lpmake / lpdump (the repo's script handles a compile fix)
+./scripts/01-build-tools.sh
+```
+**Expected:** ends with `Built:` and paths to `lpmake`, `lpunpack`, `lpdump`. ✅
+
+---
+
+## Part 4 — Repack `super` (swap in the GSI)
+```bash
+./scripts/02-repack.sh  /path/to/AP_…tar.md5  /path/to/PixelOS_treble_arm64_bN-14.0-….img.xz  ./work
+```
+This: extracts the stock `super`, **reads its exact layout with `lpdump`**, `lpunpack`s it, drops in the GSI as `system`, and `lpmake`s a new `super.img`. **All sizes are auto‑derived** — nothing hardcoded.
+
+**Expected output (real A05s example — yours should look like this):**
+```
+[*] read stock layout (lpdump)
+    device-size=9017753600  metadata-slots=2  metadata-size=65536  group=qti_dynamic_partitions:9013559296
+    partitions: system odm product system_dlkm system_ext vendor vendor_dlkm
+...
+    total=8150614016  group-max=9013559296
+    OK, headroom=862945280
+[*] lpmake -> super_new.img (sparse)
+[*] done: ./work/super_new.img
+./work/super_new.img: Android sparse image, version: 1.0, ...
+```
+- `metadata-slots=2` and the exact `device-size` are **read from your phone's firmware** — that's the point (the textbook value "1" is wrong here).
+- If you see **`GSI too big`**: the GSI doesn't fit the group. Shrink it, then re‑run:
+  ```bash
+  e2fsck -y -E unshare_blocks ./work/parts/system.img
+  resize2fs -M ./work/parts/system.img
+  ./scripts/02-repack.sh  AP_…tar.md5  ./work/parts/system.img  ./work   # feed the shrunk raw img
+  ```
+
+---
+
+## Part 5 — Build the Odin flash file
+```bash
+./scripts/03-pack-odin.sh  ./work  /path/to/AP_…tar.md5
+```
+This LZ4‑compresses the new `super` **in Samsung's exact format**, disables AVB in `vbmeta`, and tars both for Odin.
+
+**Expected output:**
+```
+    vbmeta flags now:  00 00 00 03          ← AVB disabled (verity+verification)
+[*] done: ./work/AP_PE.tar
+super.img.lz4
+vbmeta.img.lz4
+    magic (want 04 22 4d 18 6c ..): 04 22 4d 18 6c 60     ← MUST start 04 22 4d 18 6c
+```
+> ⚠️ If the magic does **not** start `04 22 4d 18 6c`, Odin will say **"LZ4 is invalid"**. The `6c` = the `--content-size` flag Samsung requires (the script sets it). Don't compress with plain `lz4`.
+
+Copy **`./work/AP_PE.tar`** and your stock **`CSC_…tar.md5`** to the Windows PC.
+
+---
+
+## Part 6 — Flash with Odin
+1. Put the phone in **Download mode**: with it on, run `adb reboot download` (or: power off → Vol Up + Vol Down + plug USB → press Vol Up to **continue** to the download screen — *not* the unlock prompt).
+2. Open **Odin3 as Administrator**. When the phone connects, the **ID:COM** box turns **blue** (driver OK). If it stays grey, install the Samsung USB driver.
+3. Load slots:
+   | Odin slot | File |
+   |---|---|
+   | **AP** | `AP_PE.tar` |
+   | **CSC** | your stock **`CSC_…tar.md5`** (the **CSC**, *not* HOME_CSC → this wipes data, required) |
+   | **BL** | *(empty)* |
+   | **CP** | *(empty)* |
+4. **Options** tab: leave defaults (**Auto Reboot** ✓, **F. Reset Time** ✓). **Do NOT** tick **Re‑Partition** or **Nand Erase**.
+5. Click **Start**.
+
+**Expected:** Odin logs `super.img` (this is the big one — **several minutes, the log looks frozen, that's normal — do not unplug**), then `vbmeta.img`, then CSC, then a green **`PASS!`**. The phone reboots.
+
+---
+
+## Part 7 — First boot + the mandatory factory reset
+On the first reboot the phone lands in **Samsung stock recovery** with:
+> *"Can't load Android system. Your data may be corrupt."* and the reboot reason **`init_user0_failed`**.
+
+**This is expected, not a failure** — the new OS can't read the old encrypted `/data`. Fix it:
+1. In recovery, use **Volume** keys to highlight **"Factory data reset"**, **Power** to select.
+2. Confirm (highlight **Factory data reset / Yes**, **Power**).
+3. Back at the menu → **"Reboot system now"** → **Power**.
+
+Now it boots PixelOS. **The first boot is slow (5–10 min)** — Google logo, then "optimizing". Be patient. Then the **Pixel setup wizard** appears. 🎉
+
+---
+
+## Part 8 — Root with Magisk (optional)
+We patch the **stock `init_boot`** (the boot ramdisk) — `super`/PixelOS stay untouched.
+
+1. On Linux, extract the stock init_boot:
+   ```bash
+   cd work
+   tar xf /path/to/AP_…tar.md5 init_boot.img.lz4
+   lz4 -d init_boot.img.lz4 init_boot.img
+   ```
+2. Copy `work/init_boot.img` to the phone (`adb push work/init_boot.img /sdcard/Download/`).
+3. Install the **[Magisk APK](https://github.com/topjohnwu/Magisk/releases)** on PixelOS → open Magisk → **Install** → **"Select and Patch a File"** → pick `init_boot.img` → it creates **`magisk_patched-XXXXX.img`** in `Download/`.
+4. Pull it back + pack for Odin:
+   ```bash
+   adb pull /sdcard/Download/magisk_patched-XXXXX.img ./work/
+   ./scripts/04-pack-initboot.sh  ./work  ./work/magisk_patched-XXXXX.img
+   ```
+5. Odin: **AP = `work/AP_root.tar`**, **all other slots EMPTY** (no wipe). Start → reboot.
+6. Open Magisk → it shows **Installed**. Rooted. ✅
+
+---
+
+## Verify success
+On the PC (`adb`), after PixelOS boots:
+```bash
+adb shell getprop ro.modversion          # PixelOS_treble_arm64_bN-14.0-...   (you're on PixelOS)
+adb shell getprop ro.build.version.release  # 14
+adb shell magisk -V                       # 30700 (or your version) → root installed
+```
+
+---
+
+## Troubleshooting
+Every problem we actually hit, and the fix:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Odin: **`FAIL! LZ4 is invalid`** | Default `lz4` omits the uncompressed-size header field Odin requires | Compress with **`lz4 -B6 --content-size`** (magic `04 22 4d 18 6c …`). The scripts do this. |
-| New `super` won't boot / dm-verity corruption | AVB still enforced | Flash a **`vbmeta` with verity+verification disabled** (byte at offset 123 → `0x03`). Scripts do this. |
-| Recovery loop: **`init_user0_failed` / "data may be corrupt"** | New OS can't read old encrypted `/data` | **Factory data reset** in stock recovery. |
-| `lpmake` wrong size / no boot | Used textbook `--metadata-slots 1` | A05s stock super uses **`--metadata-slots 2`** — the script reads the real value from `lpdump`. |
-| GSI bootloops | Wrong variant | Use **`arm64 b`** (System‑as‑Root), **non‑vndklite**. |
-| GSI too big for the group | PixelOS system > free space in `super` group | Shrink the GSI: `e2fsck -E unshare_blocks system.img; resize2fs -M system.img` before `lpmake`. |
-| build of lpmake fails (`std::find`) | new libstdc++ needs `<algorithm>` | `01-build-tools.sh` patches the liblp sources. |
+| Odin: **`FAIL! LZ4 is invalid`** | `.lz4` lacks the content‑size header Odin requires | Pack with `lz4 -B6 --content-size` (magic `04 22 4d 18 6c …`). `03-pack-odin.sh` does this. Don't use plain `lz4`. |
+| After flash: recovery loop, **`init_user0_failed`** / "data may be corrupt" | New OS can't read old encrypted `/data` | **Factory data reset** in stock recovery (Part 7). |
+| Boots to dm‑verity / "verification failed" / won't boot | AVB still on | Flash the **vbmeta with flags `00 00 00 03`** (script does it). Confirm in Part 5 output. |
+| `lpmake` made a `super` that won't boot | Used `--metadata-slots 1` | Must match stock (**2** on A05s). `02-repack.sh` reads it from `lpdump` automatically. |
+| GSI bootloops at logo | Wrong GSI variant | Use **`arm64 _bN`** (System‑as‑Root), **non‑vndklite**. |
+| `02-repack.sh` says **GSI too big** | PixelOS `system` > free space in the group | Shrink with `e2fsck -E unshare_blocks` + `resize2fs -M` (commands in Part 4), re‑run. |
+| `01-build-tools.sh` compile error about `std::find` | New libstdc++ needs `<algorithm>` | The script auto‑patches the liblp sources; just re‑run it. |
+| Frija "no firmware" / wrong region | CSC mismatch | Try a region your phone supports; any region's **same AP build** works for `super`. |
+| Odin **ID:COM** stays grey | No Samsung USB driver / not in Download mode | Install Samsung USB driver; re‑enter Download mode. |
+| Camera app crashes / SIM2 can't receive calls | Known minor GSI quirks | Use a different camera app; usually only SIM2 receive is affected — calls/data otherwise fine. |
 
 ---
+
+## Un‑brick / go back to stock Samsung
+You can always return to 100% stock (this is why it can't hard‑brick):
+1. Download full stock firmware with Frija (Part 2) — keep all 4 files.
+2. Download mode → Odin → **BL** = `BL_…`, **AP** = `AP_…`, **CP** = `CP_…`, **CSC** = `CSC_…` (full CSC = wipe).
+3. Start → wait for PASS → reboots into stock One UI.
+(Knox stays tripped — that's permanent — but the phone is fully functional Samsung again.)
+
+---
+
+## FAQ
+- **Will banking apps / Google Pay work?** Maybe. They use **Play Integrity**, which fails on a rooted/custom‑ROM/unlocked device by default. You can often pass **BASIC + DEVICE** integrity with **Magisk + Zygisk + [PlayIntegrityFork](https://github.com/osm0sis/PlayIntegrityFork)** + DenyList (+ `Shamiko` to hide root). **STRONG** integrity (some strict banks) needs hardware attestation and is very hard on an unlocked bootloader. *(Setup not covered here yet.)*
+- **Is it rooted after the GSI flash?** No — the GSI ≠ root. Do Part 8 (Magisk).
+- **Can I keep my data?** No. The flash wipes (encryption is incompatible).
+- **Does this need TWRP?** No — TWRP doesn't work on the A05s. Everything is Odin + scripts.
+- **OTA updates?** No Samsung OTAs. Update by flashing a newer GSI (repeat Parts 4–7).
 
 ## Credits
 - [PixelOS GSI — MisterZtr](https://github.com/MisterZtr/PixelOS_gsi) · [TrebleDroid](https://github.com/TrebleDroid/treble_experimentations) · [phhusson](https://github.com/phhusson/treble_experimentations)
 - [lpunpack_and_lpmake — LonelyFool](https://github.com/LonelyFool/lpunpack_and_lpmake)
 - [Magisk — topjohnwu](https://github.com/topjohnwu/Magisk) · [PlayIntegrityFork — osm0sis](https://github.com/osm0sis/PlayIntegrityFork)
-- The XDA A05s community.
+- The XDA Galaxy A05s community.
 
 ## License
-MIT — see [LICENSE](LICENSE). Provided as-is; you are responsible for your device.
+[MIT](LICENSE). Provided **as‑is** — flashing modifies firmware and carries real risk (data loss, permanent Knox trip). **You are solely responsible for your device.**

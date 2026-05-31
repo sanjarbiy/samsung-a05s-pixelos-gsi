@@ -28,7 +28,7 @@ MSLOTS=$(awk -F': ' '/Metadata slot count/{print $2;exit}' <<<"$DUMP")
 MSIZE=$(awk -F': ' '/Metadata max size/{gsub(/[^0-9]/,"",$2);print $2;exit}' <<<"$DUMP")
 GROUP=$(awk '/Group table/{g=1} g&&/Name:/{n=$2} g&&/Maximum size:/{s=$3; if(s+0>0){print n; exit}}' <<<"$DUMP")
 GMAX=$(awk -v G="$GROUP" '/Group table/{g=1} g&&$2==G{f=1} f&&/Maximum size:/{gsub(/[^0-9]/,"",$3);print $3;exit}' <<<"$DUMP")
-PARTS=$(awk '/Partition table/{p=1} p&&/Name:/{print $2}' <<<"$DUMP" | awk '!seen[$0]++')
+PARTS=$(awk '/Partition table/{p=1} /Super partition layout/{p=0} p&&/^ *Name:/{print $2}' <<<"$DUMP" | awk '!seen[$0]++')
 echo "    device-size=$DEV  metadata-slots=$MSLOTS  metadata-size=$MSIZE  group=$GROUP:$GMAX"
 echo "    partitions: $(echo $PARTS)"
 
