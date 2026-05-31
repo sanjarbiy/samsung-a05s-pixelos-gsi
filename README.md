@@ -37,10 +37,6 @@ If you follow every step **in order**, you will succeed. Don't skip steps. Read 
 - Working hardware (Wi‑Fi, calls, data, Bluetooth, GPS, camera) via the kept Samsung drivers.
 - Optional **Magisk root**.
 
-| Stock recovery you'll see (expected, step 7) |
-|---|
-| ![recovery](docs/recovery-after-flash.jpg) |
-
 ---
 
 ## 2. ⚠️ Warnings — read before anything
@@ -102,6 +98,7 @@ We keep Samsung's drivers so hardware keeps working; we only replace the OS.
 **Software**
 - **Windows:** [Odin3 v3.13.x or newer](https://odindownload.com/) + Samsung USB driver, and [Frija](https://github.com/SlackingVeteran/frija) (firmware downloader).
 - **Linux:** `clang lz4 android-sdk-libsparse-utils e2fsprogs git python3` (install command in Part 3).
+- **`adb`** ([Android platform‑tools](https://developer.android.com/tools/releases/platform-tools)) on whichever PC is plugged into the phone — used for the verification checkpoints and `adb reboot download`.
 
 **Files** (download yourself — not in this repo, for copyright/size reasons)
 - **Stock firmware** for your exact model (Part 2).
@@ -181,12 +178,13 @@ This: extracts the stock `super`, **reads its exact layout with `lpdump`**, `lpu
 ./work/super_new.img: Android sparse image, version: 1.0, ...
 ```
 - `metadata-slots=2` and the exact `device-size` are **read from your phone's firmware** — that's the point (the textbook value "1" is wrong here).
-- If you see **`GSI too big`**: the GSI doesn't fit the group. Shrink it, then re‑run:
+- If you see **`GSI too big`**: the GSI doesn't fit the group. Shrink `system.img` in place, then re‑run with `RESUME=1` (skips re‑extraction so the shrink is kept):
   ```bash
   e2fsck -y -E unshare_blocks ./work/parts/system.img
   resize2fs -M ./work/parts/system.img
-  ./scripts/02-repack.sh  AP_…tar.md5  ./work/parts/system.img  ./work   # feed the shrunk raw img
+  RESUME=1 ./scripts/02-repack.sh  AP_…tar.md5  -  ./work
   ```
+  (PixelOS `bN` normally fits with headroom, so you usually won't need this.)
 
 ---
 
