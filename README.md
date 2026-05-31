@@ -178,6 +178,7 @@ This: extracts the stock `super`, **reads its exact layout with `lpdump`**, `lpu
 ./work/super_new.img: Android sparse image, version: 1.0, ...
 ```
 - `metadata-slots=2` and the exact `device-size` are **read from your phone's firmware** — that's the point (the textbook value "1" is wrong here).
+- **`Invalid sparse file format at header magic` printed several times is HARMLESS** — `lpmake` is just reading the raw partition images. It succeeded if you see `done: …/super_new.img` and `Android sparse image` at the end.
 - If you see **`GSI too big`**: the GSI doesn't fit the group. Shrink `system.img` in place, then re‑run with `RESUME=1` (skips re‑extraction so the shrink is kept):
   ```bash
   e2fsck -y -E unshare_blocks ./work/parts/system.img
