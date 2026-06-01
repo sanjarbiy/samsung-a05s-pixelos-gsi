@@ -27,6 +27,19 @@ fi
 [ -f "$AP" ]  || { echo "ERROR: AP firmware not found: $AP"; exit 1; }
 { [ -f "$GSI" ] || [ "$GSI" = "-" ]; } || { echo "ERROR: GSI not found: $GSI"; exit 1; }
 
+# preflight: fail early + clearly if a host tool is missing (instead of a cryptic mid-run error)
+miss=""
+for c in git clang lz4 simg2img xz tar awk dd sed stat file e2fsck resize2fs; do
+  command -v "$c" >/dev/null 2>&1 || miss="$miss $c"
+done
+if [ -n "$miss" ]; then
+  echo "ERROR: missing required tool(s):$miss"
+  echo "Install on Debian/Ubuntu:"
+  echo "  sudo apt update && sudo apt install -y git clang binutils lz4 xz-utils android-sdk-libsparse-utils e2fsprogs"
+  echo "(clang->clang/clang++, binutils->ar/strip, simg2img->android-sdk-libsparse-utils, xz->xz-utils, e2fsck/resize2fs->e2fsprogs)"
+  exit 1
+fi
+
 echo "############ 1/3  build lpmake / lpunpack / lpdump ############"
 "$HERE/scripts/01-build-tools.sh"
 

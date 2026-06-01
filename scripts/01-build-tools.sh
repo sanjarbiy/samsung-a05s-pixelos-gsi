@@ -1,7 +1,8 @@
 #!/bin/bash
 # Build lpunpack + lpmake (+ lpdump) from source.
 # These read/write Android dynamic-partition (super) images.
-# Needs: clang, git  (apt-get install -y clang lz4 android-sdk-libsparse-utils e2fsprogs git)
+# Needs: git + clang (provides clang/clang++; binutils ar/strip).
+# make.sh invokes clang DIRECTLY and bundles its own zlib — no make/cmake/zlib-dev needed.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BUILD="${1:-$HERE/../.tools}"

@@ -157,7 +157,9 @@ You need the stock `super` (for the drivers) and the stock `vbmeta` (to disable)
 ```bash
 # 1. dependencies
 sudo apt-get update
-sudo apt-get install -y clang lz4 android-sdk-libsparse-utils e2fsprogs git python3
+sudo apt-get install -y git clang binutils lz4 xz-utils android-sdk-libsparse-utils e2fsprogs
+# clang→clang/clang++ · binutils→ar/strip · lz4 (Odin format) · xz-utils (.img.xz GSI)
+# android-sdk-libsparse-utils→simg2img/img2simg · e2fsprogs→e2fsck/resize2fs (GSI shrink)
 
 # 2. build lpunpack / lpmake / lpdump (the repo's script handles a compile fix)
 ./scripts/01-build-tools.sh
