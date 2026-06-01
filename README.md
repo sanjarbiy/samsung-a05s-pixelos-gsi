@@ -8,6 +8,12 @@ The A05s has **no working TWRP and no fastboot**, so the usual "`fastboot flash 
 
 If you follow every step **in order**, you will succeed. Don't skip steps. Read the ⚠️ boxes.
 
+> 🚀 **In a hurry?** [`QUICKSTART.md`](QUICKSTART.md) — download your own firmware + a
+> PixelOS GSI, run **one command** ([`build-flashable.sh`](build-flashable.sh)) to
+> produce the Odin `AP_PE.tar`, flash, done. (There's no prebuilt download: the
+> image contains *your* phone's Samsung blobs, so a foreign prebuilt can brick,
+> and Samsung firmware can't be re‑hosted — you build it from your own firmware.)
+
 ---
 
 ## Table of contents
