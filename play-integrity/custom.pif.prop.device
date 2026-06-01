@@ -1,0 +1,39 @@
+# PlayIntegrityFork custom.pif.prop — DEVICE integrity (NOT strong)
+#
+# Every Build field below comes from ONE real, stable, release-keys Pixel build
+# (Pixel 7 "panther" AP2A.240805.005, security patch 2024-08-05). Keep it
+# internally consistent if you swap it. Public prints can get banned over time;
+# if DEVICE fails, replace with another STABLE Pixel print and keep the
+# Advanced Settings below unchanged.
+#
+# The two load-bearing values for DEVICE are: *api_level=25 (must be <26) and
+# spoofProvider=1. Do NOT use a Canary/Beta fingerprint (STRONG-only).
+
+# Build Fields
+MANUFACTURER=Google
+MODEL=Pixel 7
+FINGERPRINT=google/panther/panther:14/AP2A.240805.005/12025142:user/release-keys
+BRAND=google
+PRODUCT=panther
+DEVICE=panther
+RELEASE=14
+ID=AP2A.240805.005
+INCREMENTAL=12025142
+TYPE=user
+TAGS=release-keys
+SECURITY_PATCH=2024-08-05
+DEVICE_INITIAL_SDK_INT=25
+
+# System Properties
+*.build.id=AP2A.240805.005
+#*.security_patch=2024-08-05
+*api_level=25
+
+# Advanced Settings
+spoofBuild=1
+spoofProps=1
+spoofProvider=1
+spoofSignature=0
+spoofVendingFinger=0
+spoofVendingSdk=0
+verboseLogs=0

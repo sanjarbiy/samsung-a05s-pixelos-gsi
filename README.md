@@ -25,7 +25,8 @@ If you follow every step **in order**, you will succeed. Don't skip steps. Read 
 12. [Part 6 — Flash with Odin](#part-6--flash-with-odin)
 13. [Part 7 — First boot + the mandatory factory reset](#part-7--first-boot--the-mandatory-factory-reset)
 14. [Part 8 — Root with Magisk (optional)](#part-8--root-with-magisk-optional)
-15. [Verify success](#verify-success)
+15. [Part 9 — Play Integrity + root hiding (for banking apps)](#part-9--play-integrity--root-hiding-for-banking-apps)
+16. [Verify success](#verify-success)
 16. [Troubleshooting (every error we hit)](#troubleshooting)
 17. [Un‑brick / go back to stock Samsung](#un-brick--go-back-to-stock-samsung)
 18. [FAQ](#faq) · [Credits](#credits) · [License](#license)
@@ -257,6 +258,20 @@ We patch the **stock `init_boot`** (the boot ramdisk) — `super`/PixelOS stay u
    ```
 5. Odin: **AP = `work/AP_root.tar`**, **all other slots EMPTY** (no wipe). Start → reboot.
 6. Open Magisk → it shows **Installed**. Rooted. ✅
+
+---
+
+## Part 9 — Play Integrity + root hiding (for banking apps)
+Most banking / finance apps refuse to run on a rooted device until you pass the
+**Play Integrity** `DEVICE` check and hide root. That's a separate topic with
+its own verified module stack (PlayIntegrityFork + TrickyStore + Shamiko),
+exact config, and gotchas (Canary fingerprints fail DEVICE, `api_level<26`,
+hiding root from DroidGuard, why STRONG is impossible on an unlocked bootloader).
+
+➡️ See **[`play-integrity/`](play-integrity/)** for the full guide, ready‑to‑run
+device scripts, a DEVICE `custom.pif.prop` template, and
+[SSL‑pinning notes](play-integrity/ssl-pinning.md) for analysing your own
+app traffic.
 
 ---
 
